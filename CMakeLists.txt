@@ -6,23 +6,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    # Не больше трёх ошибок за раз
-    add_compile_options(-fmax-errors=3)
-endif()
+#if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+#    # Не больше трёх ошибок за раз
+#    add_compile_options(-fmax-errors=3)
+#endif()
 
 set(CMAKE_PREFIX_PATH /usr/local/asio)
 
 # Ищем необходимые библиотеки
 find_package(Boost REQUIRED)
 find_package(GTest REQUIRED)
-file(GLOB HEADER_FILES "${CMAKE_SOURCE_DIR}/include/*.hpp")
+file(GLOB HEADER_FILES "${CMAKE_SOURCE_DIR}/include/*.h")
 
 
 # Создаём статическую библиотеку
 add_library(${PROJECT_NAME}_imp STATIC
   "${CMAKE_SOURCE_DIR}/src/main.cpp"
   "${CMAKE_SOURCE_DIR}/src/headers.cpp"
+  "${CMAKE_SOURCE_DIR}/src/session.cpp"
+  "${CMAKE_SOURCE_DIR}/src/http_server.cpp"
   ${HEADER_FILES})
 
 # Добавляем в проект используемые сторонние библиотеки
