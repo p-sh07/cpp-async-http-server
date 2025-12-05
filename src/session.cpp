@@ -46,6 +46,9 @@ awaitable<void> session(tcp::socket client_socket, io_context& ioc) {
         std::println("connecting to host: {}", host);
 
         //Forward response
+        std::string write_data;
+        auto write_buffer = dynamic_buffer(read_data);
+
         n_read = co_await async_read_until(*server_socket, write_buffer, delimiter, use_awaitable);
 
         std::string_view server_response{static_cast<const char*>(write_buffer.data().data()), n_read};
