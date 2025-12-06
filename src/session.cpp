@@ -15,6 +15,7 @@ using boost::asio::transfer_at_least;
 using boost::beast::buffers_prefix;
 using boost::asio::mutable_buffer;
 
+static constexpr uint8_t SERVER_READ_CHUNK = 8192;
 
 awaitable<void> session(tcp::socket client_socket, io_context& ioc) {
     auto server_socket = std::make_shared<tcp::socket>(ioc);
@@ -46,32 +47,28 @@ awaitable<void> session(tcp::socket client_socket, io_context& ioc) {
         std::println("connecting to host: {}", host);
 
         //Forward response
-        std::string write_data;
-        auto write_buffer = dynamic_buffer(read_data);
+        std::string server_response_data;
+        auto server_responce_buff = dynamic_buffer(read_data);
 
-        n_read = co_await async_read_until(*server_socket, write_buffer, delimiter, use_awaitable);
+        //Read response headers which are termjinated by blank line
+        n_read = co_await async_read_until(*server_socket, server_responce_buff, delimiter, use_awaitable);
 
-        std::string_view server_response{static_cast<const char*>(write_buffer.data().data()), n_read};
+        std::string_view server_response{static_cast<const char*>(server_responce_buff.data().data()), n_read};
 
-        co_await async_write(client_socket, write_buffer, use_awaitable);
+        co_await async_write(client_socket, server_responce_buff, use_awaitable);
 
         //Relay body
         if (auto content_length = findContentLength(server_response))
         {
-            size_t n_bytes = *content_length;
-            std::vector<char> buff_data;
-            auto relay_buffer = dynamic_buffer(buff_data);
+            size_t n_bytes_total = *content_length;
+            while (n_bytes_total > 0) {
+                std::array<char, SERVER_READ_CHUNK> read_buff_data;
 
-            while (n_bytes > 0) {
-                //reserve n bytes
-                auto mutable_buf = relay_buffer.prepare(n_bytes);
-
-                size_t n = co_await server_socket->async_read_some(mutable_buf, use_awaitable);
-
-                relay_buffer.commit(n);
-
-                co_await async_write(client_socket, relay_buffer, use_awaitable);
-                n_bytes -= n;
+                while (n_bytes_total > 0) {
+                    size_t n_bytes_read = co_await server_socket->async_read_some(boost::asio::buffer(read_buff_data), use_awaitable);
+                    co_await async_write(client_socket, boost::asio::buffer(read_buff_data, n_bytes_read), use_awaitable);
+                    n_bytes_total -= n_bytes_read;
+                }
             }
         }
         std::println("transferred to client successfully");
@@ -94,33 +91,3 @@ awaitable<void> closeSocket(tcp::socket& sock, boost::system::error_code& ec) {
 }
 
 } //namespace http
-
-
-// using shared_from_this version
-// Created by Pavel on 02.12.2025.
-//
-//
-// #include "session.h"
-//
-// namespace http {
-// Session::Session(tcp::socket client_socket)
-//     : client_socket_(std::move(client_socket))
-// {}
-//
-// awaitable<void> Session::start() {
-//     try {
-//         std::string read_data;
-//         auto read_buffer = dynamic_buffer(read_data);
-//         co_await async_read_until(client_socket_, read_buffer, delimiter, use_awaitable);
-//
-//         //test write
-//         std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello World!";
-//
-//         auto write_buffer = dynamic_buffer(response);
-//         co_await async_write(client_socket_, write_buffer, use_awaitable);
-//
-//     } catch (const std::exception &e) {
-//         std::cerr << "Connection error: " << e.what() << std::endl;
-//     }
-// }
-// }

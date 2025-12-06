@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 project(AsyncHttpProxy VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -17,15 +17,14 @@ set(CMAKE_PREFIX_PATH /usr/local/asio)
 find_package(Boost REQUIRED)
 find_package(GTest REQUIRED)
 file(GLOB HEADER_FILES "${CMAKE_SOURCE_DIR}/include/*.h")
-
+file(GLOB SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
+list(REMOVE_ITEM SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/main.cpp")
 
 # Создаём статическую библиотеку
 add_library(${PROJECT_NAME}_imp STATIC
-  "${CMAKE_SOURCE_DIR}/src/main.cpp"
-  "${CMAKE_SOURCE_DIR}/src/headers.cpp"
-  "${CMAKE_SOURCE_DIR}/src/session.cpp"
-  "${CMAKE_SOURCE_DIR}/src/http_server.cpp"
-  ${HEADER_FILES})
+  ${HEADER_FILES}
+  ${SOURCE_FILES}
+)
 
 # Добавляем в проект используемые сторонние библиотеки
 target_include_directories(${PROJECT_NAME}_imp PUBLIC
@@ -37,7 +36,7 @@ target_link_libraries(${PROJECT_NAME}_imp PRIVATE ${Boost_LIBRARIES})
 # Создаём исполняемый таргет и линкуем к нему статическую библиотеку
 add_executable(${PROJECT_NAME}
   "${CMAKE_SOURCE_DIR}/src/main.cpp"
-  "${CMAKE_SOURCE_DIR}/src/headers.cpp")
+)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}_imp)
 
 #

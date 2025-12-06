@@ -1,26 +1,23 @@
 #include <gtest/gtest.h>
 #include "headers.h"
-#include <gtest/gtest.h>
-#include "headers.h"  // ваш заголовочный файл с функциями
 
 using namespace std::string_view_literals;
 
-// === Тесты для iterHeaders ===
-
+// === iterHeaders tests ===
 TEST(iterHeaders, Empty) {
-    std::string_view req = "GET / HTTP/1.1\r\n\r\n";  // только первая строка + \r\n\r\n
+    std::string_view req = "GET / HTTP/1.1\r\n\r\n";
 
     size_t count = 0;
     iterHeaders(req, [&](std::string_view, std::string_view) {
         ++count;
     });
 
-    EXPECT_EQ(count, 0);  // заголовков нет
+    EXPECT_EQ(count, 0);
 }
 
 TEST(iterHeaders, SkipRequestLine) {
     std::string_view req =
-        "GET /path HTTP/1.1\r\n"          // первая строка (пропускаем)
+        "GET /path HTTP/1.1\r\n"
         "Host: example.com\r\n"
         "\r\n";
 
@@ -66,7 +63,6 @@ TEST(iterHeaders, MultipleHeaders) {
 }
 
 TEST(iterHeaders, MultipleSameHeaders) {
-    // В HTTP несколько одинаковых заголовков — валидно (например, Set-Cookie)
     std::string_view req =
         "GET / HTTP/1.1\r\n"
         "X-Custom: first\r\n"
@@ -83,8 +79,7 @@ TEST(iterHeaders, MultipleSameHeaders) {
     EXPECT_EQ(values[1], "second");
 }
 
-// === Тесты для findHostPort ===
-
+// === findHostPort tests ===
 TEST(findHostPort, Simple) {
     std::string_view req =
         "GET / HTTP/1.1\r\n"
@@ -93,7 +88,7 @@ TEST(findHostPort, Simple) {
 
     auto [host, port] = findHostPort(req);
     EXPECT_EQ(host, "api.example.org");
-    EXPECT_EQ(port, "80");  // порт по умолчанию
+    EXPECT_EQ(port, "80");
 }
 
 TEST(findHostPort, NoHost) {
@@ -104,20 +99,7 @@ TEST(findHostPort, NoHost) {
 
     auto [host, port] = findHostPort(req);
     EXPECT_TRUE(host.empty());
-    EXPECT_EQ(port, "8 prepared");  // всё ещё 80
-    // Коррекция: должно быть "80", см. ниже
-}
-
-// Исправление: в предыдущем тесте опечатка. Правильный вариант:
-TEST(findHostPort, NoHost_Corrected) {
-    std::string_view req =
-        "GET / HTTP/1.1\r\n"
-        "User-Agent: test\r\n"
-        "\r\n";
-
-    auto [host, port] = findHostPort(req);
-    EXPECT_TRUE(host.empty());
-    EXPECT_EQ(port, "80");  // исправлено
+    EXPECT_EQ(port, "80");
 }
 
 TEST(findHostPort, WithPort) {
@@ -134,7 +116,7 @@ TEST(findHostPort, WithPort) {
 TEST(findHostPort, WhitespaceAroundHost) {
     std::string_view req =
         "GET / HTTP/1.1\r\n"
-        "Host:   space-test.com   \r\n"  // пробелы до/после
+        "Host:   space-test.com   \r\n"
         "\r\n";
 
     auto [host, port] = findHostPort(req);
@@ -142,8 +124,7 @@ TEST(findHostPort, WhitespaceAroundHost) {
     EXPECT_EQ(port, "80");
 }
 
-// === Тесты для findContentLength ===
-
+// === findContentLength tests ===
 TEST(findContentLength, Simple) {
     std::string_view rsp =
         "HTTP/1.1 200 OK\r\n"
@@ -162,13 +143,13 @@ TEST(findContentLength, NoContentLength) {
         "\r\n";
 
     auto len = findContentLength(rsp);
-    EXPECT_FALSE(len.has_value());  // заголовка нет
+    EXPECT_FALSE(len.has_value());
 }
 
 TEST(findContentLength, WhitespaceInValue) {
     std::string_view rsp =
         "HTTP/1.1 200 OK\r\n"
-        "Content-Length:   42   \r\n"  // пробелы вокруг числа
+        "Content-Length:   42   \r\n"
         "\r\n";
 
     auto len = findContentLength(rsp);
@@ -179,7 +160,7 @@ TEST(findContentLength, WhitespaceInValue) {
 TEST(findContentLength, CaseInsensitive) {
     std::string_view rsp =
         "HTTP/1.1 200 OK\r\n"
-        "content-length: 999\r\n"  // нижний регистр
+        "conTeNt-LeNGth: 999\r\n"
         "\r\n";
 
     auto len = findContentLength(rsp);
@@ -187,14 +168,26 @@ TEST(findContentLength, CaseInsensitive) {
     EXPECT_EQ(*len, 999u);
 }
 
-TEST(findContentLength, InvalidNumber) {
-    std::string_view rsp =
+TEST(findContentLength, OverMaxContentLen) {
+    auto over_max = 12 * 1024 * 1024;
+    std::string rsp =
         "HTTP/1.1 200 OK\r\n"
-        "Content-Length: abc123\r\n"  // не число
+        "Content-Length: " + std::to_string(over_max) + "\r\n"
         "\r\n";
 
     auto len = findContentLength(rsp);
-    EXPECT_FALSE(len.has_value());  // from_chars вернёт ошибку
+    ASSERT_TRUE(len.has_value());
+    EXPECT_EQ(*len, MAX_CONTENT_LENGTH);
+}
+
+TEST(findContentLength, InvalidNumber) {
+    std::string_view rsp =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: abc123\r\n"
+        "\r\n";
+
+    auto len = findContentLength(rsp);
+    EXPECT_FALSE(len.has_value());
 }
 
 int main(int argc, char **argv) {
