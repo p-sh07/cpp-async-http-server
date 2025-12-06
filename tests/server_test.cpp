@@ -24,7 +24,6 @@ void remove_file_and_temp_dir(const std::filesystem::path& temp_dir, const std::
     }
 }
 
-// Тест: проверка доступности ресурса
 TEST(WgetTest, FetchHomepageBasic) {
     const std::string url = "http://example.com";
     std::string output_file_name = "test_output.html";
@@ -37,19 +36,15 @@ TEST(WgetTest, FetchHomepageBasic) {
 
     EXPECT_EQ(exit_code, 0) << "wget failed with exit code " << exit_code;
 
-    // Проверяем существование файла
     ASSERT_TRUE(std::filesystem::exists(output_file))
         << "Output file not created: " << output_file;
 
-    // Проверяем размер файла
     auto file_size = std::filesystem::file_size(output_file);
     EXPECT_GT(file_size, 0u) << "Downloaded file is empty";
 
-    // Очищаем временный файл
     remove_file_and_temp_dir(TEMP_DIR, output_file_name);
 }
 
-// Тест: проверка содержимого
 TEST(WgetTest, VerifyContent) {
     const std::string url = "http://httpbin.org/html";
     std::string output_file_name = "content_test.htm";
