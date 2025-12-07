@@ -6,65 +6,115 @@
 #include <string>
 #include <fstream>
 #include <system_error>
+#include <cstdlib>
+#include <thread>
+#include <chrono>
 
-const std::filesystem::path TEMP_DIR = std::filesystem::current_path() / "tmp";
+namespace fs = std::filesystem;
+const fs::path TEMP_DIR = fs::current_path() / "tmp";
 
-int run_wget(const std::string& url, const std::filesystem::path& output_file) {
-    std::string command = "wget --timeout=10 --tries=1 -O \""
-        + output_file.string() + "\" \"" + url + "\"";
-    return std::system(command.c_str());
+//========== With Python backend emulation ==========
+const std::string PROXY_SERVER_PORT = "5555";
+const std::string BACKEND_SERVER_PORT = "4444";
+const std::string PROXY_ADDR = "127.0.0.1:" + PROXY_SERVER_PORT;
+const std::string BACKEND_ADDR = "127.0.0.1:" + BACKEND_SERVER_PORT;
+
+void start_proxy_server_app() {
+    std::string cmd = fs::current_path().string() + "/AsyncHttpProxy " + PROXY_SERVER_PORT;
+    std::println("{}\n", cmd);
+    std::system(cmd.c_str());
 }
 
-void remove_file_and_temp_dir(const std::filesystem::path& temp_dir, const std::string& file_name) {
-    try {
-        std::filesystem::remove(TEMP_DIR / file_name);
-        std::filesystem::remove(temp_dir);
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Error removing file: " << e.what() << std::endl;
-    }
+
+void start_backend_server() {
+    std::string cmd = std::format(R"(python3 -c '
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", {}))
+s.listen(1)
+conn, _ = s.accept()
+req = conn.recv(1024)
+
+response = (
+    b"HTTP/1.1 200 OK\r\n"
+    b"Content-Type: text/html\r\n"
+    b"Content-Length: 12\r\n"
+    b"Connection: close\r\n"
+    b"\r\n"
+    b"Hello World!\n"
+)
+
+conn.sendall(response)
+conn.shutdown(socket.SHUT_WR)
+
+conn.close()
+s.close()
+')", BACKEND_SERVER_PORT);
+
+
+    std::println("{}\n", cmd);
+    std::system(cmd.c_str());
 }
 
-TEST(WgetTest, FetchHomepageBasic) {
-    const std::string url = "http://example.com";
-    std::string output_file_name = "test_output.html";
-    const std::filesystem::path output_file = TEMP_DIR / output_file_name;
+int run_wget_via_proxy(const std::string& url, const fs::path& output_file) {
+    std::string cmd = "wget  --timeout=2 --tries=1 -S -e use_proxy=yes -e http_proxy=" + PROXY_ADDR +
+                       " -O \"" + output_file.string() + "\" \"" + url + "\"";
+    std::println("{}\n", cmd);
+    return std::system(cmd.c_str());
+}
 
-    //Create temp directory if doesnt exist
-    std::filesystem::create_directories(TEMP_DIR);
 
-    int exit_code = run_wget(url, output_file);
+// bool is_port_available(int port) {
+//     std::string cmd = "lsof -i:" + std::to_string(port) + " > /dev/null 2>&1";
+//     std::println("{}\n", cmd);
+//     return std::system(cmd.c_str()) != 0;
+// }
+
+void kill_process_on_port(std::string port) {
+    std::string cmd = "kill -9 $( lsof -i:" + port + " -t )";
+
+    std::println("{}\n", cmd);
+    std::system(cmd.c_str());
+}
+
+void cleanup() {
+    kill_process_on_port(BACKEND_SERVER_PORT);
+    kill_process_on_port(PROXY_SERVER_PORT);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    fs::remove_all(TEMP_DIR);
+    fs::create_directories(TEMP_DIR);
+}
+
+TEST(ProxyTest, SuccessfulRequest) {
+    std::println("->launching cleanup\n");
+    cleanup();
+
+    std::println("->starting server\n");
+
+    //start backend
+    std::jthread backend(start_backend_server);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    std::jthread proxy(start_proxy_server_app);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    //send request
+    const std::string url = "http://" + BACKEND_ADDR + "/test";
+    const fs::path output_file = TEMP_DIR / "output.html";
+
+    int exit_code = run_wget_via_proxy(url, output_file);
 
     EXPECT_EQ(exit_code, 0) << "wget failed with exit code " << exit_code;
 
-    ASSERT_TRUE(std::filesystem::exists(output_file))
-        << "Output file not created: " << output_file;
-
-    auto file_size = std::filesystem::file_size(output_file);
-    EXPECT_GT(file_size, 0u) << "Downloaded file is empty";
-
-    remove_file_and_temp_dir(TEMP_DIR, output_file_name);
-}
-
-TEST(WgetTest, VerifyContent) {
-    const std::string url = "http://httpbin.org/html";
-    std::string output_file_name = "content_test.htm";
-    const std::filesystem::path output_file = TEMP_DIR / output_file_name;
-
-    //Create temp directory if doesnt exist
-    std::filesystem::create_directories(TEMP_DIR);
-
-    int exit_code = run_wget(url, output_file);
-    EXPECT_EQ(exit_code, 0);
+    //check response
+    ASSERT_TRUE(fs::exists(output_file));
+    ASSERT_GT(fs::file_size(output_file), 0);
 
     std::ifstream file(output_file);
-    ASSERT_TRUE(file.is_open()) << "Failed to open downloaded file: " << output_file;
-
     std::string content((std::istreambuf_iterator<char>(file)),
                        std::istreambuf_iterator<char>());
 
-    //TODO: CHECK AND REPLACE IF DIFFERENT CONTENT
-    EXPECT_NE(content.find("<h1>Herman Melville - Moby-Dick</h1>"), std::string::npos)
-        << "Expected title not found in response";
-
-    remove_file_and_temp_dir(TEMP_DIR, output_file_name);
+    EXPECT_NE(content.find("Hello World!"), std::string::npos);
 }
